@@ -16,6 +16,7 @@ from .module import Module
 from .normalization import LayerNorm
 
 
+
 __all__ = [
     "Transformer",
     "TransformerEncoder",
@@ -23,77 +24,48 @@ __all__ = [
     "TransformerEncoderLayer",
     "TransformerDecoderLayer",
 ]
+#import白名单，只有这五个class可以被import到
 
 
 def _generate_square_subsequent_mask(
-    sz: int,
+    sz: int,        #size
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
-) -> Tensor:
-    r"""Generate a square causal mask for the sequence.
-
-    The masked positions are filled with float('-inf'). Unmasked positions are filled with float(0.0).
-    """
+) -> Tensor:# 指明返回一个tensor
     return torch.triu(
         torch.full((sz, sz), float("-inf"), dtype=dtype, device=device),
+        #full全填充张量     triu上三角矩阵
         diagonal=1,
+        # 对角线偏移量=1 对角线也被填充
+        #0 保存对角线及以上         1 从对角线上方一行开始，不包含对角线            -1 从对角线下方一行开始
     )
-
+#最后可以得到
+# [[ 0., -inf, -inf],
+#  [ 0.,  0., -inf],
+#  [ 0.,  0.,  0.]]
 
 def _get_seq_len(src: Tensor, batch_first: bool) -> Optional[int]:
+    #获得seq序列长度返回一个int值
+    #batch_first  指示批次维度是否在张量的第 0 维
     if src.is_nested:
+        #判断src是否为嵌套tensor
+        #nestedtensor由两部分   tensor和mask 比如同一不同尺寸大小的图片，用mask标注哪些部分是填充的
         return None
     else:
         src_size = src.size()
         if len(src_size) == 2:
-            # unbatched: S, E
+            # unbatched: S, E   没有Batch维度
             return src_size[0]
         else:
+            #就三个维度 batch  seq_len   embedding_dim
             # batched: B, S, E if batch_first else S, B, E
             seq_len_pos = 1 if batch_first else 0
             return src_size[seq_len_pos]
-
+        #batch_first=True时 (batch_size, seq_len, input_size)
+        #batch_first=False时(seq_len, batch_size, input_size)
 
 class Transformer(Module):
-    r"""A transformer model.
-
-    .. note::
-        See `this tutorial <https://pytorch.org/tutorials/intermediate/transformer_building_blocks.html>`_
-        for an in depth discussion of the performant building blocks PyTorch offers for building your own
-        transformer layers.
-
-    User is able to modify the attributes as needed. The architecture
-    is based on the paper `Attention Is All You Need <https://arxiv.org/abs/1706.03762>`_.
-
-    Args:
-        d_model: the number of expected features in the encoder/decoder inputs (default=512).
-        nhead: the number of heads in the multiheadattention models (default=8).
-        num_encoder_layers: the number of sub-encoder-layers in the encoder (default=6).
-        num_decoder_layers: the number of sub-decoder-layers in the decoder (default=6).
-        dim_feedforward: the dimension of the feedforward network model (default=2048).
-        dropout: the dropout value (default=0.1).
-        activation: the activation function of encoder/decoder intermediate layer, can be a string
-            ("relu" or "gelu") or a unary callable. Default: relu
-        custom_encoder: custom encoder (default=None).
-        custom_decoder: custom decoder (default=None).
-        layer_norm_eps: the eps value in layer normalization components (default=1e-5).
-        batch_first: If ``True``, then the input and output tensors are provided
-            as (batch, seq, feature). Default: ``False`` (seq, batch, feature).
-        norm_first: if ``True``, encoder and decoder layers will perform LayerNorms before
-            other attention and feedforward operations, otherwise after. Default: ``False`` (after).
-        bias: If set to ``False``, ``Linear`` and ``LayerNorm`` layers will not learn an additive
-            bias. Default: ``True``.
-
-    Examples::
-        >>> transformer_model = nn.Transformer(nhead=16, num_encoder_layers=12)
-        >>> src = torch.rand((10, 32, 512))
-        >>> tgt = torch.rand((20, 32, 512))
-        >>> out = transformer_model(src, tgt)
-
-    Note: A full example to apply nn.Transformer module for the word language model is available in
-    https://github.com/pytorch/examples/tree/master/word_language_model
-    """
-
+  
     def __init__(
         self,
         d_model: int = 512,
@@ -103,19 +75,21 @@ class Transformer(Module):
         dim_feedforward: int = 2048,
         dropout: float = 0.1,
         activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
-        custom_encoder: Optional[Any] = None,
-        custom_decoder: Optional[Any] = None,
+        custom_encoder: Optional[Any] = None,       #自定义编码
+        custom_decoder: Optional[Any] = None,       #自定义解码
         layer_norm_eps: float = 1e-5,
         batch_first: bool = False,
-        norm_first: bool = False,
+        norm_first: bool = False,                   ## LayerNorm位置
+        # if ``True``, encoder and decoder layers will perform LayerNorms before other attention and feedforward operations, 
+        # otherwise after. Default: ``False`` (after).如果为 ``True``，编码器和解码器层将在其他注意力机制和前馈操作之前执行层归一化
         bias: bool = True,
         device=None,
         dtype=None,
-    ) -> None:
+    ) -> None:#指明返回类型
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         torch._C._log_api_usage_once(f"torch.nn.modules.{self.__class__.__name__}")
-
+        #pytorch内部api，记录模块使用情况
         if custom_encoder is not None:
             self.encoder = custom_encoder
         else:
@@ -174,7 +148,7 @@ class Transformer(Module):
         src_mask: Optional[Tensor] = None,
         tgt_mask: Optional[Tensor] = None,
         memory_mask: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,#忽略padding的掩码
         tgt_key_padding_mask: Optional[Tensor] = None,
         memory_key_padding_mask: Optional[Tensor] = None,
         src_is_causal: Optional[bool] = None,
@@ -298,7 +272,6 @@ class Transformer(Module):
         return _generate_square_subsequent_mask(sz, dtype=dtype, device=device)
 
     def _reset_parameters(self):
-        r"""Initiate parameters in the transformer model."""
         for p in self.parameters():
             if p.dim() > 1:
                 xavier_uniform_(p)
